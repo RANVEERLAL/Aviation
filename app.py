@@ -17,7 +17,7 @@ from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
 # ------------------------ Load CSV from GitHub ------------------------ #
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO_NAME/main/synthetic_airline_survey_data.csv"
+GITHUB_CSV_URL = "https://raw.githubusercontent.com/RANVEERLAL/Aviation/refs/heads/main/synthetic_airline_survey_data.csv"
 df = pd.read_csv(GITHUB_CSV_URL)
 
 # ------------------------ Streamlit Layout ------------------------ #
