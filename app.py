@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+from urllib.error import URLError
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
@@ -19,36 +20,40 @@ from sklearn.cluster import KMeans
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
-# ------------------------ Load CSV from GitHub ------------------------ #
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO_NAME/main/synthetic_airline_survey_data.csv"
-df = pd.read_csv(GITHUB_CSV_URL)
+# ------------------------ Load CSV ------------------------ #
+GITHUB_CSV_URL = (
+    "https://raw.githubusercontent.com/YOUR_USERNAME/"
+    "YOUR_REPO_NAME/main/data/synthetic_airline_survey_data.csv"
+)
+LOCAL_CSV_PATH = "data/synthetic_airline_survey_data.csv"
 
-st.set_page_config(layout="wide")
-st.title("✈️ Airline Customer Experience Analytics Dashboard")
+try:
+    df = pd.read_csv(GITHUB_CSV_URL)
+    data_source = "GitHub"
+except URLError:
+    df = pd.read_csv(LOCAL_CSV_PATH)
+    data_source = "local file"
+except Exception as e:
+    st.error(f"Could not load data:\n{e}")
+    st.stop()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Data Visualization",
-    "🔎 Classification",
-    "📍 Clustering",
-    "🔗 Association Rules",
-    "📈 Regression"
-])
+st.sidebar.success(f"Loaded data from {data_source}")
 
 # ------------------------ Helpers ------------------------ #
-def preprocess_classification(df, target):
-    df_clean = df.dropna().copy()
-    for col in df_clean.select_dtypes(include="object").columns:
-        df_clean[col] = LabelEncoder().fit_transform(df_clean[col].astype(str))
-    X = df_clean.drop(columns=[target])
-    y = df_clean[target]
+def preprocess_classification(df_in, target_col):
+    dfc = df_in.dropna().copy()
+    for c in dfc.select_dtypes(include="object").columns:
+        dfc[c] = LabelEncoder().fit_transform(dfc[c].astype(str))
+    X = dfc.drop(columns=[target_col])
+    y = dfc[target_col]
     return X, y
 
-def preprocess_numerical(df):
-    return df.select_dtypes(include=["int64", "float64"]).dropna()
+def preprocess_numerical(df_in):
+    return df_in.select_dtypes(include=["int64", "float64"]).dropna()
 
-def prepare_transactions(df, cols):
+def prepare_transactions(df_in, cols):
     records = []
-    for _, row in df[cols].dropna().iterrows():
+    for _, row in df_in[cols].dropna().iterrows():
         items = []
         for c in cols:
             parts = str(row[c]).split(",")
@@ -58,163 +63,187 @@ def prepare_transactions(df, cols):
     te_ary = te.fit(records).transform(records)
     return pd.DataFrame(te_ary, columns=te.columns_)
 
+# ------------------------ Streamlit Layout ------------------------ #
+st.set_page_config(layout="wide", page_title="Airline CX Dashboard")
+st.title("✈️ Airline Customer Experience Analytics Dashboard")
+
+tabs = st.tabs([
+    "📊 Data Visualization",
+    "🔎 Classification",
+    "📍 Clustering",
+    "🔗 Association Rules",
+    "📈 Regression"
+])
+
 # ------------------------ Tab 1: Visualization ------------------------ #
-with tab1:
-    st.header("📊 Descriptive Analytics: 15+ Insights")
+with tabs[0]:
+    st.header("📊 Descriptive Analytics: 15 Insights")
+    st.subheader("Preview & Stats")
     st.dataframe(df.head())
     st.dataframe(df.describe(include="all"))
+
     visuals = [
         ("Age","Age Distribution"),
-        ("MonthlyIncome","Monthly Income Distribution"),
-        ("FlightsPerYear","Flights Per Year Count"),
-        ("TravelPurpose","Travel Purpose Count"),
-        ("Class","Booking Class Count"),
+        ("MonthlyIncome","Income Distribution"),
+        ("FlightsPerYear","Flights Per Year"),
+        ("TravelPurpose","Travel Purpose Counts"),
+        ("Class","Booking Class Counts"),
         ("AirlinePrefReason","Airline Preference Reasons"),
-        ("AvgSpendPerFlight","Average Spend Distribution"),
+        ("AvgSpendPerFlight","Avg Spend Distribution"),
         ("PersonalizationImportance","Personalization Importance"),
-        ("BookingDevice","Booking Device Count"),
-        ("TechComfortLevel","Tech Comfort Level Distribution"),
+        ("BookingDevice","Booking Device Counts"),
+        ("TechComfortLevel","Tech Comfort Level"),
         ("WillingToUsePersonalizationApp","Willingness to Use App"),
         ("WillingToPayExtra","Willingness to Pay Extra"),
-        ("TrustsAirlinesWithData","Trust with Personal Data"),
-        ("WillRecommendToOthers","Referral Willingness"),
-        ("PercentWillingToSpendMore","Percent Willing to Spend More")
+        ("TrustsAirlinesWithData","Trust in Data Handling"),
+        ("WillRecommendToOthers","Referral Likelihood"),
+        ("PercentWillingToSpendMore","% Willing to Spend More")
     ]
+
     for col, title in visuals:
         st.markdown(f"#### {title}")
-        fig, ax = plt.subplots()
         if df[col].dtype == "object":
-            sns.countplot(y=df[col], ax=ax, order=df[col].value_counts().index)
+            fig, ax = plt.subplots()
+            sns.countplot(y=df[col], ax=ax)
+            st.pyplot(fig)
         else:
+            fig, ax = plt.subplots()
             sns.histplot(df[col], kde=True, ax=ax)
-        st.pyplot(fig)
+            st.pyplot(fig)
 
 # ------------------------ Tab 2: Classification ------------------------ #
-with tab2:
+with tabs[1]:
     st.header("🔎 Classification Models")
-    binary_cols = [c for c in df.columns if df[c].nunique()==2]
+
+    binary_cols = [c for c in df.columns if df[c].nunique() == 2]
     if not binary_cols:
         st.error("No binary columns available for classification.")
-        st.stop()
-    target = st.selectbox("Select Binary Target", binary_cols)
-    X, y = preprocess_classification(df.copy(), target)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
+    else:
+        target = st.selectbox("Select Binary Target", binary_cols)
+        X, y = preprocess_classification(df.copy(), target)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, random_state=42
+        )
 
-    models = {
-        "KNN": KNeighborsClassifier(),
-        "Decision Tree": DecisionTreeClassifier(),
-        "Random Forest": RandomForestClassifier(),
-        "GBRT": GradientBoostingClassifier()
-    }
+        models = {
+            "KNN": KNeighborsClassifier(),
+            "Decision Tree": DecisionTreeClassifier(),
+            "Random Forest": RandomForestClassifier(),
+            "GBRT": GradientBoostingClassifier()
+        }
 
-    results = {}
-    rocs = {}
-    importances = {}
-    for name, m in models.items():
-        m.fit(X_train, y_train)
-        y_pred = m.predict(X_test)
-        results[name] = classification_report(y_test, y_pred, output_dict=True)
-        # ROC
-        if hasattr(m, "predict_proba"):
-            proba = m.predict_proba(X_test)[:,1]
-            fpr, tpr, _ = roc_curve(y_test, proba)
-            rocs[name] = (fpr, tpr)
-        # Feature importance
-        if hasattr(m, "feature_importances_"):
-            importances[name] = m.feature_importances_
-        else:
-            importances[name] = [0]*X.shape[1]
+        results, rocs, importances = {}, {}, {}
+        for name, mdl in models.items():
+            mdl.fit(X_train, y_train)
+            y_pred = mdl.predict(X_test)
+            results[name] = classification_report(
+                y_test, y_pred, output_dict=True
+            )
+            if hasattr(mdl, "predict_proba"):
+                proba = mdl.predict_proba(X_test)[:, 1]
+                fpr, tpr, _ = roc_curve(y_test, proba)
+                rocs[name] = (fpr, tpr)
+            if hasattr(mdl, "feature_importances_"):
+                importances[name] = mdl.feature_importances_
+            else:
+                importances[name] = np.zeros(X.shape[1])
 
-    st.subheader("Model Performance")
-    for nm, rpt in results.items():
-        st.markdown(f"**{nm}**")
-        st.dataframe(pd.DataFrame(rpt).T)
+        st.subheader("Model Performance")
+        for name, rpt in results.items():
+            st.markdown(f"**{name}**")
+            st.dataframe(pd.DataFrame(rpt).T)
 
-    st.subheader("Confusion Matrix")
-    sel = st.selectbox("Choose Model", list(models.keys()))
-    cm = pd.crosstab(y_test, models[sel].predict(X_test),
-                     rownames=["Actual"], colnames=["Predicted"])
-    st.dataframe(cm)
+        sel = st.selectbox("Choose Model for Confusion & ROC", list(models.keys()))
+        # Confusion
+        cm = pd.crosstab(
+            y_test, models[sel].predict(X_test),
+            rownames=["Actual"], colnames=["Predicted"]
+        )
+        st.subheader("Confusion Matrix")
+        st.dataframe(cm)
 
-    st.subheader("ROC Curve")
-    fig, ax = plt.subplots()
-    for nm, (fpr, tpr) in rocs.items():
-        ax.plot(fpr, tpr, label=nm)
-    ax.set_xlabel("FPR"); ax.set_ylabel("TPR"); ax.legend()
-    st.pyplot(fig)
+        # ROC Curve
+        st.subheader("ROC Curve")
+        fig, ax = plt.subplots()
+        for name, (fpr, tpr) in rocs.items():
+            ax.plot(fpr, tpr, label=name)
+        ax.legend(); ax.set_xlabel("FPR"); ax.set_ylabel("TPR")
+        st.pyplot(fig)
 
-    st.subheader("Feature Importances")
-    imp = importances[sel]
-    fig, ax = plt.subplots()
-    sns.barplot(x=imp, y=X.columns, ax=ax)
-    ax.set_title(f"{sel} Importances")
-    st.pyplot(fig)
+        # Feature Importance
+        st.subheader("Feature Importances")
+        imp = importances[sel]
+        fig, ax = plt.subplots()
+        sns.barplot(x=imp, y=X.columns, ax=ax)
+        ax.set_title(f"{sel} Importances")
+        st.pyplot(fig)
 
 # ------------------------ Tab 3: Clustering ------------------------ #
-with tab3:
+with tabs[2]:
     st.header("📍 KMeans Clustering")
 
     num_df = preprocess_numerical(df)
+    ks = list(range(2, 11))
     inertias = []
     silhouettes = []
-    ks = list(range(2,11))
     for k in ks:
         km = KMeans(n_clusters=k, random_state=42).fit(num_df)
         inertias.append(km.inertia_)
         silhouettes.append(silhouette_score(num_df, km.labels_))
 
-    st.subheader("Elbow Method (Inertia vs k)")
+    st.subheader("Elbow Plot")
     fig, ax = plt.subplots()
-    ax.plot(ks, inertias, marker='o')
+    ax.plot(ks, inertias, marker="o")
     ax.set_xlabel("k"); ax.set_ylabel("Inertia")
-    ax.set_title("Elbow Plot")
     st.pyplot(fig)
 
-    st.subheader("Silhouette Score vs k")
+    st.subheader("Silhouette Scores")
     fig, ax = plt.subplots()
-    ax.plot(ks, silhouettes, marker='o')
+    ax.plot(ks, silhouettes, marker="o")
     ax.set_xlabel("k"); ax.set_ylabel("Silhouette Score")
-    ax.set_title("Silhouette Analysis")
     st.pyplot(fig)
 
-    k = st.slider("Select Number of Clusters", 2, 10, 3)
-    km = KMeans(n_clusters=k, random_state=42).fit(num_df)
-    df_c = df.copy()
-    df_c["Cluster"] = km.labels_
-    st.dataframe(df_c.head())
-    st.download_button("Download Clustered Data",
-                       df_c.to_csv(index=False),
-                       file_name="clustered_data.csv")
+    k_sel = st.slider("Select k", 2, 10, 3)
+    km_final = KMeans(n_clusters=k_sel, random_state=42).fit(num_df)
+    dfc = df.copy()
+    dfc["Cluster"] = km_final.labels_
+    st.dataframe(dfc.head())
+    st.download_button(
+        "Download Clustered Data",
+        dfc.to_csv(index=False),
+        file_name="clustered_data.csv"
+    )
 
 # ------------------------ Tab 4: Association Rules ------------------------ #
-with tab4:
+with tabs[3]:
     st.header("🔗 Association Rule Mining")
-    # pick only comma-list columns
+
     basket_cols = [
         c for c in df.columns 
-        if df[c].dtype=="object" and df[c].str.contains(',').any()
+        if df[c].dtype == "object" and df[c].str.contains(",").any()
     ]
     if len(basket_cols) < 2:
         st.warning("Need at least 2 comma-list columns.")
     else:
-        c1 = st.selectbox("Column 1", basket_cols, key="c1")
-        c2 = st.selectbox("Column 2", [c for c in basket_cols if c!=c1], key="c2")
+        c1 = st.selectbox("Column 1", basket_cols, key="a1")
+        c2 = st.selectbox("Column 2", [c for c in basket_cols if c!=c1], key="a2")
         sup = st.slider("Min Support", 0.01, 1.0, 0.1)
         conf = st.slider("Min Confidence", 0.1, 1.0, 0.5)
-        tdf = prepare_transactions(df, [c1,c2])
+
+        tdf = prepare_transactions(df, [c1, c2])
         freq = apriori(tdf, min_support=sup, use_colnames=True)
         rules = association_rules(freq, metric="confidence", min_threshold=conf)
         st.dataframe(rules.sort_values("confidence", ascending=False).head(10))
 
 # ------------------------ Tab 5: Regression ------------------------ #
-with tab5:
+with tabs[4]:
     st.header("📈 Regression Models")
 
     num_df = preprocess_numerical(df)
-    target = st.selectbox("Select Numeric Target", num_df.columns)
-    X = num_df.drop(columns=[target])
-    y = num_df[target]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    target_reg = st.selectbox("Select Numeric Target", num_df.columns)
+    Xr = num_df.drop(columns=[target_reg])
+    yr = num_df[target_reg]
+    Xtr, Xte, ytr, yte = train_test_split(Xr, yr, test_size=0.2, random_state=42)
 
     regs = {
         "Linear": LinearRegression(),
@@ -223,28 +252,27 @@ with tab5:
         "Decision Tree": DecisionTreeRegressor()
     }
 
-    reg_results = {}
+    metrics = {}
     coefs = {}
-    for name, mdl in regs.items():
-        mdl.fit(X_train, y_train)
-        pred = mdl.predict(X_test)
-        reg_results[name] = {
-            "MSE": mean_squared_error(y_test, pred),
-            "R2": r2_score(y_test, pred)
+    for name, model in regs.items():
+        model.fit(Xtr, ytr)
+        pred = model.predict(Xte)
+        metrics[name] = {
+            "MSE": mean_squared_error(yte, pred),
+            "R2": r2_score(yte, pred)
         }
-        # capture feature importance / coefficients
-        if hasattr(mdl, "coef_"):
-            coefs[name] = np.abs(mdl.coef_)
-        elif hasattr(mdl, "feature_importances_"):
-            coefs[name] = mdl.feature_importances_
+        if hasattr(model, "coef_"):
+            coefs[name] = np.abs(model.coef_)
+        elif hasattr(model, "feature_importances_"):
+            coefs[name] = model.feature_importances_
 
     st.subheader("Regression Metrics")
-    st.dataframe(pd.DataFrame(reg_results).T)
+    st.dataframe(pd.DataFrame(metrics).T)
 
     st.subheader("Feature Importances / Coefficients")
-    sel_reg = st.selectbox("Select Model for Importances", list(regs.keys()))
-    imp_vals = coefs[sel_reg]
+    sel_reg = st.selectbox("Model for Importances", list(regs.keys()))
+    vals = coefs[sel_reg]
     fig, ax = plt.subplots()
-    sns.barplot(x=imp_vals, y=X.columns, ax=ax)
+    sns.barplot(x=vals, y=Xr.columns, ax=ax)
     ax.set_title(f"{sel_reg} Feature Importance")
     st.pyplot(fig)
