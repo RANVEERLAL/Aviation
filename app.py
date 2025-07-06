@@ -16,14 +16,25 @@ from sklearn.metrics import silhouette_score
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
-# -------------------- Load Dataset from GitHub -------------------- #
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO_NAME/main/synthetic_airline_survey_data.csv"  # Change this!
+# ------------------------ Load CSV from GitHub ------------------------ #
+GITHUB_CSV_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO_NAME/main/synthetic_airline_survey_data.csv"
 df = pd.read_csv(GITHUB_CSV_URL)
 
-# -------------------- Preprocessing -------------------- #
+# ------------------------ Streamlit Layout ------------------------ #
+st.set_page_config(layout="wide")
+st.title("✈️ Airline Customer Experience Analytics Dashboard")
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Data Visualization", 
+    "🔎 Classification", 
+    "📍 Clustering", 
+    "🔗 Association Rules", 
+    "📈 Regression"
+])
+
+# ------------------------ Helpers ------------------------ #
 def preprocess_classification(df, target):
-    df_clean = df.copy()
-    df_clean = df_clean.dropna()
+    df_clean = df.dropna().copy()
     label_encoders = {}
     for col in df_clean.columns:
         if df_clean[col].dtype == 'object':
@@ -37,22 +48,21 @@ def preprocess_classification(df, target):
 def preprocess_numerical(df):
     return df.select_dtypes(include=["int64", "float64"]).dropna()
 
-# -------------------- Streamlit UI -------------------- #
-st.set_page_config(layout="wide")
-st.title("✈️ Airline Customer Experience Analytics Dashboard")
+def prepare_transactions(df, cols):
+    tx = df[cols].dropna().apply(lambda x: [i.strip() for i in ','.join(x).split(',')], axis=1).tolist()
+    te = TransactionEncoder()
+    te_ary = te.fit(tx).transform(tx)
+    return pd.DataFrame(te_ary, columns=te.columns_)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Data Visualization", "🔎 Classification", "📍 Clustering", "🔗 Association Rules", "📈 Regression"])
-
-# -------------------- TAB 1: Data Visualization -------------------- #
+# ------------------------ Tab 1: Visualization ------------------------ #
 with tab1:
     st.header("📊 Descriptive Analytics: 15+ Insights")
-    st.subheader("Data Overview")
+    st.subheader("Dataset Preview")
     st.dataframe(df.head())
 
-    st.subheader("Basic Statistics")
+    st.subheader("Statistical Overview")
     st.dataframe(df.describe(include='all'))
 
-    # Visuals
     visuals = [
         ("Age", "Age Distribution"),
         ("MonthlyIncome", "Monthly Income Distribution"),
@@ -80,12 +90,12 @@ with tab1:
             sns.histplot(df[col], kde=True, ax=ax)
         st.pyplot(fig)
 
-# -------------------- TAB 2: Classification -------------------- #
+# ------------------------ Tab 2: Classification ------------------------ #
 with tab2:
     st.header("🔎 Classification Models")
 
     target_col = st.selectbox("Select Target Variable", df.columns)
-    X, y, label_encoders = preprocess_classification(df.copy(), target_col)
+    X, y, encoders = preprocess_classification(df.copy(), target_col)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
 
     models = {
@@ -95,7 +105,6 @@ with tab2:
         "GBRT": GradientBoostingClassifier()
     }
 
-    st.subheader("Performance Table")
     results = {}
     rocs = {}
     importances = {}
@@ -112,18 +121,18 @@ with tab2:
         elif name == "KNN":
             importances[name] = [0] * X.shape[1]
 
-    for name, report in results.items():
+    st.subheader("📋 Model Performance Table")
+    for name, result in results.items():
         st.markdown(f"**{name}**")
-        st.dataframe(pd.DataFrame(report).T)
+        st.dataframe(pd.DataFrame(result).T)
 
-    st.subheader("Confusion Matrix")
+    st.subheader("🧾 Confusion Matrix")
     selected_model = st.selectbox("Select Model", list(models.keys()))
-    model = models[selected_model]
-    y_pred = model.predict(X_test)
+    y_pred = models[selected_model].predict(X_test)
     cm = pd.crosstab(y_test, y_pred, rownames=["Actual"], colnames=["Predicted"])
     st.dataframe(cm)
 
-    st.subheader("ROC Curve")
+    st.subheader("📈 ROC Curve")
     fig, ax = plt.subplots()
     for name, (fpr, tpr) in rocs.items():
         ax.plot(fpr, tpr, label=name)
@@ -131,7 +140,7 @@ with tab2:
     ax.set_title("ROC Curve")
     st.pyplot(fig)
 
-    st.subheader("Feature Importances")
+    st.subheader("📊 Feature Importances")
     if selected_model in importances:
         fig, ax = plt.subplots()
         imp = importances[selected_model]
@@ -139,24 +148,23 @@ with tab2:
         ax.set_title(f"Feature Importances - {selected_model}")
         st.pyplot(fig)
 
-# -------------------- TAB 3: Clustering -------------------- #
+# ------------------------ Tab 3: Clustering ------------------------ #
 with tab3:
     st.header("📍 KMeans Clustering")
 
     num_df = preprocess_numerical(df)
-    k_range = range(2, 11)
     scores = []
-    for k in k_range:
+    for k in range(2, 11):
         km = KMeans(n_clusters=k, random_state=42)
         km.fit(num_df)
         score = silhouette_score(num_df, km.labels_)
         scores.append(score)
 
     fig, ax = plt.subplots()
-    ax.plot(list(k_range), scores, marker="o")
-    ax.set_title("Silhouette Score for Different K")
+    ax.plot(range(2, 11), scores, marker='o')
     ax.set_xlabel("Number of Clusters")
     ax.set_ylabel("Silhouette Score")
+    ax.set_title("Silhouette Analysis")
     st.pyplot(fig)
 
     k_val = st.slider("Select number of clusters", 2, 10, 3)
@@ -167,31 +175,24 @@ with tab3:
     st.dataframe(df_clustered.head())
     st.download_button("Download Clustered Data", df_clustered.to_csv(index=False), file_name="clustered_data.csv")
 
-# -------------------- TAB 4: Association Rules -------------------- #
+# ------------------------ Tab 4: Association Rules ------------------------ #
 with tab4:
     st.header("🔗 Association Rule Mining (Apriori)")
     col1 = st.selectbox("Column 1", df.columns)
     col2 = st.selectbox("Column 2", df.columns)
-    support = st.slider("Minimum Support", 0.01, 1.0, 0.1)
-    confidence = st.slider("Minimum Confidence", 0.1, 1.0, 0.5)
-
-    def prepare_transactions(df, cols):
-        tx = df[cols].dropna().apply(lambda x: [i.strip() for i in ','.join(x).split(',')], axis=1).tolist()
-        te = TransactionEncoder()
-        te_ary = te.fit(tx).transform(tx)
-        return pd.DataFrame(te_ary, columns=te.columns_)
+    min_support = st.slider("Min Support", 0.01, 1.0, 0.1)
+    min_conf = st.slider("Min Confidence", 0.1, 1.0, 0.5)
 
     trans_df = prepare_transactions(df, [col1, col2])
-    freq_items = apriori(trans_df, min_support=support, use_colnames=True)
-    rules = association_rules(freq_items, metric="confidence", min_threshold=confidence)
-    rules = rules.sort_values("confidence", ascending=False).head(10)
-    st.dataframe(rules)
+    freq_items = apriori(trans_df, min_support=min_support, use_colnames=True)
+    rules = association_rules(freq_items, metric="confidence", min_threshold=min_conf)
+    st.dataframe(rules.sort_values("confidence", ascending=False).head(10))
 
-# -------------------- TAB 5: Regression -------------------- #
+# ------------------------ Tab 5: Regression ------------------------ #
 with tab5:
-    st.header("📈 Regression Analysis")
+    st.header("📈 Regression Models")
     num_df = preprocess_numerical(df)
-    target = st.selectbox("Select Target Variable", num_df.columns)
+    target = st.selectbox("Select Numeric Target", num_df.columns)
     X = num_df.drop(columns=[target])
     y = num_df[target]
 
@@ -203,14 +204,13 @@ with tab5:
     }
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    results = {}
-
+    reg_results = {}
     for name, model in models.items():
         model.fit(X_train, y_train)
         pred = model.predict(X_test)
-        results[name] = {
+        reg_results[name] = {
             "MSE": mean_squared_error(y_test, pred),
             "R2 Score": r2_score(y_test, pred)
         }
 
-    st.dataframe(pd.DataFrame(results).T)
+    st.dataframe(pd.DataFrame(reg_results).T)
