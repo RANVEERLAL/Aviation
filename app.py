@@ -159,18 +159,48 @@ with tab3:
     st.dataframe(df_clustered.head())
     st.download_button("Download Clustered Data", df_clustered.to_csv(index=False), file_name="clustered_data.csv")
 
-# ------------------------ Tab 4: Association Rules ------------------------ #
+    # ---------------------- Helper for Association ---------------------- #
+def prepare_transactions(df, cols):
+    # Coerce values to strings, split on commas, strip whitespace
+    records = []
+    for _, row in df[cols].dropna().iterrows():
+        items = []
+        for col in cols:
+            # split on comma, then strip each piece
+            parts = str(row[col]).split(',')
+            items.extend([p.strip() for p in parts if p.strip()])
+        records.append(items)
+    te = TransactionEncoder()
+    te_ary = te.fit(records).transform(records)
+    return pd.DataFrame(te_ary, columns=te.columns_)
+
+# ---------------------- Tab 4: Association Rules ---------------------- #
 with tab4:
     st.header("🔗 Association Rule Mining (Apriori)")
-    col1 = st.selectbox("Column 1", df.columns)
-    col2 = st.selectbox("Column 2", df.columns)
-    min_support = st.slider("Min Support", 0.01, 1.0, 0.1)
-    min_conf = st.slider("Min Confidence", 0.1, 1.0, 0.5)
 
-    trans_df = prepare_transactions(df, [col1, col2])
-    freq_items = apriori(trans_df, min_support=min_support, use_colnames=True)
-    rules = association_rules(freq_items, metric="confidence", min_threshold=min_conf)
-    st.dataframe(rules.sort_values("confidence", ascending=False).head(10))
+    # Only allow columns that are truly comma-separated lists
+    list_cols = [
+        c for c in df.columns 
+        if df[c].dtype == "object" and df[c].str.contains(',').any()
+    ]
+    if len(list_cols) < 2:
+        st.warning("No appropriate columns found for association mining (need at least two comma-list columns).")
+    else:
+        col1 = st.selectbox("Column 1 (basket)", list_cols, key="assoc1")
+        col2 = st.selectbox("Column 2 (basket)", [c for c in list_cols if c != col1], key="assoc2")
+
+        min_support = st.slider("Min Support", 0.01, 1.0, 0.1)
+        min_conf = st.slider("Min Confidence", 0.1, 1.0, 0.5)
+
+        trans_df = prepare_transactions(df, [col1, col2])
+        freq_items = apriori(trans_df, min_support=min_support, use_colnames=True)
+        rules = association_rules(freq_items, metric="confidence", min_threshold=min_conf)
+        rules = rules.sort_values("confidence", ascending=False).head(10)
+
+        if rules.empty:
+            st.info("No rules found with these parameters.")
+        else:
+            st.dataframe(rules)
 
 # ------------------------ Tab 5: Regression ------------------------ #
 with tab5:
