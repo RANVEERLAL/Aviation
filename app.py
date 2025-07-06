@@ -91,11 +91,24 @@ with tab1:
             sns.histplot(df[col], kde=True, ax=ax)
         st.pyplot(fig)
 
-# ------------------------ Tab 2: Classification ------------------------ #
+# ------------------------ TAB 2: Classification ------------------------ #
 with tab2:
     st.header("🔎 Classification Models")
 
-    target_col = st.selectbox("Select Target Variable", df.columns)
+    # Only show truly binary targets for ROC support
+    binary_cols = [c for c in df.columns if df[c].nunique() == 2]
+    if not binary_cols:
+        st.error("No binary target columns found for classification. "
+                 "Make sure you have at least one column with exactly two unique values.")
+        st.stop()
+
+    target_col = st.selectbox(
+        "Select Binary Target Variable", 
+        binary_cols,
+        help="Only columns with exactly two unique values are shown, so ROC curves will be valid."
+    )
+
+    # prepare features & label
     X, y, encoders = preprocess_classification(df.copy(), target_col)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
 
@@ -105,32 +118,57 @@ with tab2:
         "Random Forest": RandomForestClassifier(),
         "GBRT": GradientBoostingClassifier()
     }
-    # … (after training each model)
-    results = {}
-    rocs    = {}
-    importances = {}
 
+    # train & evaluate
+    results, rocs, importances = {}, {}, {}
     for name, model in models.items():
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
         results[name] = classification_report(y_test, y_pred, output_dict=True)
 
-        # Only compute ROC if it’s a binary problem and model supports predict_proba
-        if hasattr(model, "predict_proba") and len(np.unique(y_test)) == 2:
-            try:
-                proba = model.predict_proba(X_test)[:, 1]
-                fpr, tpr, _ = roc_curve(y_test, proba)
-                rocs[name] = (fpr, tpr)
-            except Exception as e:
-                st.warning(f"Could not compute ROC for {name}: {e}")
-        else:
-            st.info(f"Skipping ROC for {name}: target not binary or no predict_proba")
+        # Now we know this is binary, so roc_curve will work
+        proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
+        if proba is not None:
+            fpr, tpr, _ = roc_curve(y_test, proba)
+            rocs[name] = (fpr, tpr)
 
-        # Feature importances (where available)
+        # feature importance
         if hasattr(model, "feature_importances_"):
             importances[name] = model.feature_importances_
-        elif name == "KNN":
+        else:
             importances[name] = [0] * X.shape[1]
+
+    # display performance table
+    st.subheader("📋 Model Performance Table")
+    for name, rpt in results.items():
+        st.markdown(f"**{name}**")
+        st.dataframe(pd.DataFrame(rpt).T)
+
+    # confusion matrix
+    st.subheader("🧾 Confusion Matrix")
+    chosen = st.selectbox("Select Model", list(models.keys()))
+    cm = pd.crosstab(y_test, models[chosen].predict(X_test),
+                     rownames=["Actual"], colnames=["Predicted"])
+    st.dataframe(cm)
+
+    # ROC curves
+    st.subheader("📈 ROC Curve")
+    fig, ax = plt.subplots()
+    for name, (fpr, tpr) in rocs.items():
+        ax.plot(fpr, tpr, label=name)
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title("ROC Curves")
+    ax.legend()
+    st.pyplot(fig)
+
+    # feature importances
+    st.subheader("📊 Feature Importances")
+    imp = importances[chosen]
+    fig, ax = plt.subplots()
+    sns.barplot(x=imp, y=X.columns, ax=ax)
+    ax.set_title(f"{chosen} Importances")
+    st.pyplot(fig)
 
 # ------------------------ Tab 3: Clustering ------------------------ #
 with tab3:
