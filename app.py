@@ -22,9 +22,7 @@ from mlxtend.preprocessing import TransactionEncoder
 
 # ------------------------ Load CSV ------------------------ #
 GITHUB_CSV_URL = (
-    "https://raw.githubusercontent.com/YOUR_USERNAME/"
-    "YOUR_REPO_NAME/main/data/synthetic_airline_survey_data.csv"
-)
+    "https://raw.githubusercontent.com/RANVEERLAL/Aviation/refs/heads/main/synthetic_airline_survey_data.csv")
 LOCAL_CSV_PATH = "data/synthetic_airline_survey_data.csv"
 
 try:
