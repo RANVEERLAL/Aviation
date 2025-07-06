@@ -105,50 +105,32 @@ with tab2:
         "Random Forest": RandomForestClassifier(),
         "GBRT": GradientBoostingClassifier()
     }
-
+    # … (after training each model)
     results = {}
-    rocs = {}
+    rocs    = {}
     importances = {}
 
     for name, model in models.items():
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
         results[name] = classification_report(y_test, y_pred, output_dict=True)
+
+        # Only compute ROC if it’s a binary problem and model supports predict_proba
         if hasattr(model, "predict_proba") and len(np.unique(y_test)) == 2:
-    try:
-        fpr, tpr, _ = roc_curve(y_test, model.predict_proba(X_test)[:, 1])
-        rocs[name] = (fpr, tpr)
-    except Exception as e:
-        st.warning(f"ROC curve generation failed for {name}: {e}")
-else:
-    st.warning(f"Skipping ROC for {name}: Target variable is not binary.")
-    
-    st.subheader("📋 Model Performance Table")
-    for name, result in results.items():
-        st.markdown(f"**{name}**")
-        st.dataframe(pd.DataFrame(result).T)
+            try:
+                proba = model.predict_proba(X_test)[:, 1]
+                fpr, tpr, _ = roc_curve(y_test, proba)
+                rocs[name] = (fpr, tpr)
+            except Exception as e:
+                st.warning(f"Could not compute ROC for {name}: {e}")
+        else:
+            st.info(f"Skipping ROC for {name}: target not binary or no predict_proba")
 
-    st.subheader("🧾 Confusion Matrix")
-    selected_model = st.selectbox("Select Model", list(models.keys()))
-    y_pred = models[selected_model].predict(X_test)
-    cm = pd.crosstab(y_test, y_pred, rownames=["Actual"], colnames=["Predicted"])
-    st.dataframe(cm)
-
-    st.subheader("📈 ROC Curve")
-    fig, ax = plt.subplots()
-    for name, (fpr, tpr) in rocs.items():
-        ax.plot(fpr, tpr, label=name)
-    ax.legend()
-    ax.set_title("ROC Curve")
-    st.pyplot(fig)
-
-    st.subheader("📊 Feature Importances")
-    if selected_model in importances:
-        fig, ax = plt.subplots()
-        imp = importances[selected_model]
-        sns.barplot(x=imp, y=X.columns, ax=ax)
-        ax.set_title(f"Feature Importances - {selected_model}")
-        st.pyplot(fig)
+        # Feature importances (where available)
+        if hasattr(model, "feature_importances_"):
+            importances[name] = model.feature_importances_
+        elif name == "KNN":
+            importances[name] = [0] * X.shape[1]
 
 # ------------------------ Tab 3: Clustering ------------------------ #
 with tab3:
