@@ -15,6 +15,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder
+from sklearn.preprocessing import label_binarize
 
 # ------------------------ Load CSV from GitHub ------------------------ #
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/RANVEERLAL/Aviation/refs/heads/main/synthetic_airline_survey_data.csv"
@@ -113,14 +114,15 @@ with tab2:
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
         results[name] = classification_report(y_test, y_pred, output_dict=True)
-        if hasattr(model, "predict_proba"):
-            fpr, tpr, _ = roc_curve(y_test, model.predict_proba(X_test)[:,1])
-            rocs[name] = (fpr, tpr)
-        if hasattr(model, "feature_importances_"):
-            importances[name] = model.feature_importances_
-        elif name == "KNN":
-            importances[name] = [0] * X.shape[1]
-
+        if hasattr(model, "predict_proba") and len(np.unique(y_test)) == 2:
+    try:
+        fpr, tpr, _ = roc_curve(y_test, model.predict_proba(X_test)[:, 1])
+        rocs[name] = (fpr, tpr)
+    except Exception as e:
+        st.warning(f"ROC curve generation failed for {name}: {e}")
+else:
+    st.warning(f"Skipping ROC for {name}: Target variable is not binary.")
+    
     st.subheader("📋 Model Performance Table")
     for name, result in results.items():
         st.markdown(f"**{name}**")
